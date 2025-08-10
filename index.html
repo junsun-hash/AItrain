@@ -2718,7 +2718,7 @@
      (B) 增加人工标注人员的数量  
      (C) 引入主动学习的方法优化标注过程  
      (D) 使用预标注和人工审核结合的半自动标注方法  
-     答案： (B)
+     答案： (B)  
 
 ## **三、多选题**
 
@@ -4839,9 +4839,11 @@
                 let line = lines[i].trim();
                 if (line.startsWith('####')) line = line.replace('####', '').trim();
 
+                // Section headers
                 if (line.includes('一、 判断题')) {
                     currentType = 'judgement';
                     originalNumber = 0;
+                    currentQuestion = null;
                     continue;
                 }
                 if (line.includes('二、单选题')) {
@@ -4858,17 +4860,13 @@
                 }
                 if (!currentType || line === '') continue;
 
+                // Start of a new question
                 if (/^\d+\./.test(line)) {
-                    if (currentQuestion) {
-                        if(currentQuestion.type === 'single') singleChoiceQuestions.push(currentQuestion);
-                        else if(currentQuestion.type === 'multiple') multipleChoiceQuestions.push(currentQuestion);
-                        allQuestionsInOrder.push(currentQuestion);
-                    }
-                    
                     originalNumber++;
                     const questionText = line.replace(/^\d+\.\s*/, '');
 
                     if (currentType === 'judgement') {
+                        // Judgement questions are simple: question line followed by answer line
                         const answerLine = lines[++i].trim();
                         const answer = answerLine.includes('√') ? '正确' : '错误';
                         const newJudgementQuestion = {
@@ -4876,12 +4874,14 @@
                             type: 'judgement',
                             question: `${originalNumber}. ${questionText}`,
                             answer: answer,
-                            originalNumber: originalNumber
+                            originalNumber: originalNumber,
+                            fullAnswer: answer
                         };
                         judgementQuestions.push(newJudgementQuestion);
                         allQuestionsInOrder.push(newJudgementQuestion);
-                        currentQuestion = null;
+                        currentQuestion = null; // Judgement question is self-contained, so reset.
                     } else {
+                        // For single/multiple choice, create a new question object
                         currentQuestion = {
                             id: `${currentType.slice(0,1)}_${currentType === 'single' ? singleChoiceQuestions.length + 1 : multipleChoiceQuestions.length + 1}`,
                             type: currentType,
@@ -4892,16 +4892,19 @@
                         };
                     }
                 } else if (/^\([A-Z]\)/.test(line) && currentQuestion) {
+                    // This is an option line
                     currentQuestion.options.push(line);
                 } else if (line.startsWith('答案：') && currentQuestion) {
+                    // This is the answer line, the question is now complete
                     const match = line.match(/\((.*?)\)/);
                     if (match) {
                         const answerStr = match[1];
                         if (currentQuestion.type === 'single') {
                             currentQuestion.answer = answerStr.trim();
-                            const lastOptionIndex = 'ABCD'.indexOf(currentQuestion.answer);
-                             if(lastOptionIndex !== -1 && currentQuestion.options.length > lastOptionIndex) {
-                                currentQuestion.fullAnswer = currentQuestion.options[lastOptionIndex];
+                            const optionMap = {'A':0, 'B':1, 'C':2, 'D':3, 'E':4};
+                            const answerIndex = optionMap[currentQuestion.answer];
+                             if(answerIndex !== undefined && currentQuestion.options.length > answerIndex) {
+                                currentQuestion.fullAnswer = currentQuestion.options[answerIndex];
                             } else {
                                currentQuestion.fullAnswer = `(${currentQuestion.answer})`;
                             }
@@ -4910,12 +4913,18 @@
                             currentQuestion.fullAnswer = `(${answerStr})`;
                         }
                     }
+                    
+                    // Save the completed question immediately
+                    if (currentQuestion.type === 'single') {
+                        singleChoiceQuestions.push(currentQuestion);
+                    } else if (currentQuestion.type === 'multiple') {
+                        multipleChoiceQuestions.push(currentQuestion);
+                    }
+                    allQuestionsInOrder.push(currentQuestion);
+                    
+                    // Reset for the next question
+                    currentQuestion = null;
                 }
-            }
-             if (currentQuestion) {
-                if(currentQuestion.type === 'single') singleChoiceQuestions.push(currentQuestion);
-                else if(currentQuestion.type === 'multiple') multipleChoiceQuestions.push(currentQuestion);
-                allQuestionsInOrder.push(currentQuestion);
             }
 
             return { judgementQuestions, singleChoiceQuestions, multipleChoiceQuestions, allQuestionsInOrder };
